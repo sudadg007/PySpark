@@ -1,0 +1,168 @@
+Contains
+1. Load S3 files into data frame
+2. Create view from data frame
+3. Convert table into data frame
+4. Import function and pyspark
+5. Join two dataframes
+6. Add column into dataframe
+7. Use full dataframe query
+
+
+
+
+-----------------------------------  1   Load S3 files in Dataframe--------------------------
+
+option 1:
+
+test_df=spark.read.text("s3://abacus-clover-data-lake-dev-892395949777-us-east-1/raw/s3-replication/ongoing/cms/RH5141.DTRRD.D240402.T0009073")
+
+option 2:
+fire_df=spark.read \
+             .format("csv") \
+             .option("header","true") \
+             .option("inferschema","true") \
+             .load("/databricks-datasets/learning-spark-v2/sf-fire/sf-fire-calls.csv")      
+
+
+-----------------------------------  2 Create view from data frame--------------------------
+
+
+df.createOrReplaceTempView("people")
+
+
+-----------------------------------  3 Create view from data frame--------------------------
+
+
+
+main_df=spark.table("mgln02_dev_catalog.gold.ihp_rx_flat_claims")
+   ref_ihp_tcoc_members = spark.table("mgln02_dev_catalog.bronze.ihp_tcoc_members")
+
+
+------------------------------ 4 Import function and pyspark ---------------------
+
+
+import json
+import os
+
+from pyspark.sql import SparkSession, functions as F
+from pyspark.sql.types import BooleanType, StringType
+from pyspark.sql.window import Window
+from air.pipeline.sinks import OverwriteSink
+
+
+------------------------- 5 join two data frames---------------
+
+Join two dataframes
+
+    main_df = main_df.join(
+        ref_ihp_tcoc_members.select(
+            F.col("member_id").alias("ref_health_toc__member_id"),
+            F.col("first_date_of_oncology_dx").alias("ref_first_date_of_oncology_dx"),
+            F.col("current_master_member_id").alias("ref_current_master_member_id"),
+            F.col("Filename").alias("ref_file_name"),
+        ).distinct(),
+        (F.col("patient_member_source_id") == F.col("ref_health_toc__member_id"))
+         ,
+        "left",
+    )
+
+
+----------------------  6 Add With column in data frame -------------
+
+
+    main_df=main_df.withColumn("filename_dt", F.get_json_object("source_view_source_map", "$.FILENAME"))
+
+
+fire_df_DT=rename_fire_df.withColumn("Call_Date",to_date("Call_Date","MM/dd/yyyy")) \
+                         .withColumn("Watch_Date",to_date("Watch_Date","MM/dd/yyyy")) \
+                         .withColumn("Available_DtTm",to_timestamp("Available_DtTm","MM/dd/yyyy hh:mm:ss a"))\
+                         .withColumn("Delay",round("Delay",2))    
+
+main_df=test_df.withcolumn("current_master_member_id",F.when(
+                F.col("trapelo_flag") == "Y", F.col("ref_current_master_member_id")
+            ).otherwise(F.lit("None")))
+
+
+
+------------------ 7 useful query dataframe---------------
+
+a. How many distinct type of calls were made to the fire department
+
+
+dis_callType=fire_df_DT.select("CallType") \
+                           .distinct() \
+                          .where("CallType is not null")
+display(dis_callType.count())  
+
+
+b. Find out all responses or delay times greater than 5 mins ?
+
+df_delay=fire_df_DT.select("Call Number","Delay") \
+                   .where("Delay >5 and CallType is not null")
+display(df_delay)   
+
+c.What were the most common call types
+
+df_most=fire_df_DT.select("CallType") \
+                  .where("CallType is not null") \
+                  .groupBy("CallType") \
+                  .count() \
+                  .orderBy("count",ascending=False)
+                  
+
+display(df_most)  
+
+
+d. what Zip codes accounted for the most common calls
+
+df_ZIP_MOST=fire_df_DT.select("Zip_Code","CallType") \
+                      .filter("CallType is not null") \
+                      .groupBy("Zip_Code","CallType") \
+                      .count() \
+                      .orderBy ("count",ascending=False)
+display(df_ZIP_MOST) 
+
+e. What San Francisco neighborhoods are in the zip codes 94102 and 94103
+
+df_NEI = fire_df_DT.select ("Neighborhood","Zip_Code") \
+                   .where("Zip_Code IN (94102,94103) and city=='SF'") \
+                   .distinct()    
+display(df_NEI)   
+
+
+f. What was the sum of all calls, average,min,max of the call response times
+
+df_SUM=fire_df_DT.select(sum("NumAlarms"),avg("Delay"),min("Delay"),max("Delay")) 
+                
+display(df_SUM)  
+
+g. How many distinct year of data are in the CSV file?
+
+df_DisYear=fire_df_DT.withColumn("Year1",year("Call_Date"))
+df_Year= df_DisYear.select("Year1") \
+                 .groupBy("Year1") \
+                   .count() \
+                   .orderBy("count", ascending=False)       
+                                            
+display(df_Year)  
+
+
+h. What week of the year in 2018 had the most file calls ?
+
+DF_Worst=df_DisYear.withColumn("weekYear",weekofyear("Call_Date"))     
+DF_Worst_week= DF_Worst.select("weekYear") \
+                       .where("Year1 == '2018'") \
+                       .groupBy("weekYear") \
+                        .count() \
+                      .orderBy("count", ascending=False) 
+display(DF_Worst_week) 
+
+
+i. What neighborhoods in San Francisco had the worst response time in 2018.
+
+DF_Worst_response= DF_Worst.select("Neighborhood","Delay") \
+                           .where("Year1 == '2018'") \
+                           .orderBy("Delay",ascending=False)
+display(DF_Worst_response)  
+
+
