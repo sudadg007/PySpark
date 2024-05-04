@@ -84,7 +84,21 @@ main_df=test_df.withcolumn("current_master_member_id",F.when(
 
 
 
+
 ------------------ 7 useful query dataframe---------------
+
+
+# select substring and filter condtion
+
+testd=main_df.select(
+    F.col("source_view_source_map"), F.get_json_object("source_view_source_map", "$.FILENAME").alias("testfile") ,
+    F.expr("replace(testfile,'.txt','')"),
+     F.expr("substring(replace(filename_dt,'.txt',''),-6)"),
+     F.expr("substring(filename_dt,-10,6)")
+    
+).filter(F.col("testfile") == "IH_RXONCDIAG_CLMS_202303.txt")
+
+
 
 a. How many distinct type of calls were made to the fire department
 
